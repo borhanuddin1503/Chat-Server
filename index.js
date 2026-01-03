@@ -9,7 +9,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL
+    origin: "*",
   },
 });
 
@@ -30,7 +30,7 @@ let adminSocketId = null;
 const userSockets = {}; // { userId: socketId }
 
 async function run() {
-  // await client.connect();
+  await client.connect();
   const db = client.db("roy-tech");
   usersCollection = db.collection("users");
   console.log("✅ MongoDB Connected");
