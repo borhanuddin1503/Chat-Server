@@ -22,7 +22,7 @@ const client = new MongoClient(uri);
 
 
 // collectons
-let usersCollection;
+let chatsCollection;
 
 
 /* ================= Socket Storage ================= */
@@ -32,8 +32,7 @@ const userSockets = {}; // { userId: socketId }
 async function run() {
   await client.connect();
   const db = client.db("roy-tech");
-  usersCollection = db.collection("users");
-  console.log("✅ MongoDB Connected");
+  chatsCollection = db.collection("chats");
 }
 
 run();
@@ -41,34 +40,58 @@ run();
 /* ================= REST API ================= */
 // Only user list
 app.get("/users", async (req, res) => {
-  const users = await usersCollection.find().toArray();
+  const users = await chatsCollection.find().toArray();
   res.send(users);
 });
 
 /* ================= SOCKET.IO ================= */
 io.on("connection", (socket) => {
-  console.log("🔌 Connected:", socket.id);
 
   // User/Admin register
-  socket.on("register", ({ userId, role }) => {
+  socket.on("register", async ({ userId, role }) => {
+
     if (role === "admin") {
       adminSocketId = socket.id;
-      console.log("👑 Admin connected");
     } else {
       userSockets[userId] = socket.id;
-      console.log("🙋 User connected:", userId);
+
+      const isExist = await chatsCollection.findOne({ userId });
+
+      if (!isExist) {
+        await chatsCollection.insertOne({
+          userId,
+          chatStarted: new Date().toISOString(),
+          chats: [],
+        });
+      }
     }
   });
 
   /* ===== User -> Admin ===== */
-  socket.on("send_message_to_admin", (data) => {
+  socket.on("send_message_to_admin", async (data) => {
+
+    console.log(adminSocketId)
+    console.log('message from user', data)
     if (adminSocketId) {
       io.to(adminSocketId).emit("receive_message_from_user", data);
     }
+    // 1️⃣ Save message in DB
+    await chatsCollection.updateOne(
+      { userId: data.userId },
+      {
+        $push: {
+          chats: ({
+            sender: "user",
+            message: data.message,
+            time: new Date().toISOString(),
+          }),
+        },
+      }
+    );
   });
 
   /* ===== Admin -> User ===== */
-  socket.on("send_message_to_user", (data) => {
+  socket.on("send_message_to_user", async (data) => {
     /*
       data = {
         userId,
@@ -79,11 +102,24 @@ io.on("connection", (socket) => {
     if (targetSocket) {
       io.to(targetSocket).emit("receive_message_from_admin", data);
     }
+
+    // save into mongodb
+    await chatsCollection.updateOne(
+      { userId: data.userId },
+      {
+        $push: {
+          chats: ({
+            sender: "admin",
+            message: data.message,
+            time: new Date().toISOString(),
+          })
+        }
+      }
+    )
   });
 
   /* ===== Disconnect ===== */
   socket.on("disconnect", () => {
-    console.log("❌ Disconnected:", socket.id);
 
     if (socket.id === adminSocketId) {
       adminSocketId = null;
@@ -105,5 +141,4 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
 });
