@@ -80,13 +80,17 @@ io.on("connection", (socket) => {
       { userId: data.userId },
       {
         $push: {
-          chats: ({
+          chats: {
             sender: "user",
             message: data.message,
             time: new Date().toISOString(),
-          }),
+          },
         },
-      }
+        $set: {
+          lastMessageTime: new Date(),
+        },
+      },
+      { upsert: true }
     );
   });
 
